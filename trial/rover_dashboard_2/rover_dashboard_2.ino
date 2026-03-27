@@ -164,7 +164,7 @@ void setup() {
 
   // Serve dashboard HTML from SPIFFS
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
-    req->send(SPIFFS, "/rover_dashboard.html", "text/html");
+    req->send(SPIFFS, "/rover_dashboard_2.html", "text/html");
   });
 
   server.begin();
