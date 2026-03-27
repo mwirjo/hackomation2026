@@ -1,0 +1,916 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROVER TRAIL MAPPER</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700;900&display=swap');
+
+  :root {
+    --bg:        #0a0c0f;
+    --panel:     #0f1318;
+    --border:    #1e2730;
+    --accent:    #00e5ff;
+    --accent2:   #39ff14;
+    --warn:      #ff6b35;
+    --muted:     #3a4a57;
+    --text:      #c8d8e0;
+    --text-dim:  #5a7080;
+    --path:      #00e5ff;
+    --origin:    #39ff14;
+    --rover:     #ff6b35;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── TOP BAR ── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 8px 20px;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  header h1 {
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    color: var(--accent);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  header h1 span { color: var(--accent2); }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    white-space: nowrap;
+  }
+  .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+  }
+  .dot.live  { background: var(--accent2); box-shadow: 0 0 6px var(--accent2); }
+  .dot.error { background: #f00; }
+
+  .spacer { flex: 1; }
+
+  .btn {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    padding: 6px 16px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    cursor: pointer;
+    background: transparent;
+    color: var(--text-dim);
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+  .btn.success { border-color: var(--accent2); color: var(--accent2); }
+  .btn.success:hover { background: var(--accent2); color: var(--bg); }
+  .btn.success:disabled { border-color: var(--muted); color: var(--muted); cursor: not-allowed; }
+
+  /* ── MAIN LAYOUT ── */
+  .main {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── SIDE PANEL ── */
+  .side-panel {
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    padding: 14px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  .pane-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+    margin-bottom: 2px;
+  }
+
+  .data-block {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px 12px;
+  }
+  .data-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    border-bottom: 1px solid #111820;
+  }
+  .data-row:last-child { border-bottom: none; }
+  .data-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+  .data-val {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 13px;
+    color: var(--accent);
+  }
+  .data-val.green  { color: var(--accent2); }
+  .data-val.orange { color: var(--warn); }
+
+  /* ── WS INPUT ── */
+  .ws-row { display: flex; gap: 6px; }
+  .ws-input {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    padding: 5px 8px;
+    border-radius: 2px;
+    outline: none;
+  }
+  .ws-input:focus { border-color: var(--accent); }
+
+  /* ── PATH LOG ── */
+  .path-log {
+    flex: 1;
+    min-height: 80px;
+    overflow-y: auto;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.9;
+  }
+  .path-log .entry { display: flex; gap: 8px; align-items: baseline; }
+  .path-log .entry .idx   { color: var(--muted); width: 28px; flex-shrink:0; }
+  .path-log .entry .dir   { color: var(--warn);  width: 32px; flex-shrink:0; }
+  .path-log .entry .dist  { color: var(--accent2); width: 44px; flex-shrink:0; }
+  .path-log .entry .coord { color: var(--accent); }
+
+  /* ── MAP AREA ── */
+  .map-wrap {
+    position: relative;
+    overflow: hidden;
+    background: var(--bg);
+    cursor: crosshair;
+  }
+  #mapCanvas {
+    display: block;
+    position: absolute;
+    top: 0; left: 0;
+  }
+
+  .map-controls {
+    position: absolute;
+    bottom: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 5;
+  }
+
+  .map-info {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    pointer-events: none;
+    z-index: 5;
+    line-height: 1.7;
+  }
+  .map-info span { color: var(--accent); }
+
+  .scale-bar {
+    position: absolute;
+    bottom: 52px;
+    right: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    pointer-events: none;
+    z-index: 5;
+  }
+  .scale-bar-line {
+    height: 4px;
+    border: 1px solid var(--accent);
+    border-top: none;
+    position: relative;
+  }
+  .scale-bar-line::before, .scale-bar-line::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 6px;
+    background: var(--accent);
+  }
+  .scale-bar-line::before { left: 0; }
+  .scale-bar-line::after  { right: 0; }
+  .scale-bar-label {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 9px;
+    color: var(--accent);
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    background: var(--panel);
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 6px 20px;
+    flex-shrink: 0;
+  }
+  .footer-stat {
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex; gap: 6px;
+  }
+  .footer-stat b { color: var(--accent2); font-weight: 400; }
+
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ── HEADER ── -->
+<header>
+  <h1>ROVER<span>TRAIL</span></h1>
+
+  <div class="status-pill">
+    <div class="dot" id="wsDot"></div>
+    <span id="wsStatus">DISCONNECTED</span>
+  </div>
+
+  <div class="ws-row" style="max-width:320px;flex:1">
+    <input class="ws-input" id="wsUrl" value="ws://192.168.4.1/ws" placeholder="ws://IP/ws">
+    <button class="btn" id="btnConnect">CONNECT</button>
+  </div>
+
+  <div class="spacer"></div>
+
+  <button class="btn" id="btnGridToggle" title="Toggle grid">GRID</button>
+  <button class="btn" id="btnTrailToggle" title="Toggle trail">TRAIL</button>
+  <button class="btn" id="btnLabels" title="Toggle labels">LABELS</button>
+  <button class="btn" id="btnCenter">CENTER</button>
+  <button class="btn" id="btnZoomIn">＋</button>
+  <button class="btn" id="btnZoomOut">－</button>
+  <button class="btn success" id="btnReplay" disabled>▶ REPLAY</button>
+  <button class="btn danger" id="btnClear">CLEAR</button>
+</header>
+
+<!-- ── MAIN ── -->
+<div class="main">
+
+  <!-- LEFT PANEL -->
+  <div class="side-panel">
+
+    <div class="pane-title">CONNECTION</div>
+    <div class="data-block" style="font-size:10px;font-family:'Share Tech Mono',monospace;color:var(--text-dim);line-height:1.7">
+      Send JSON over WebSocket:<br>
+      <span style="color:var(--accent2)">{"dir":"F","dist":1.0}</span><br>
+      <span style="color:var(--text-dim)">dir: F / B / L / R</span><br>
+      <span style="color:var(--text-dim)">dist: metres (number)</span>
+    </div>
+
+    <div class="pane-title" style="margin-top:4px">POSITION</div>
+    <div class="data-block">
+      <div class="data-row"><span class="data-label">X (East +)</span>  <span class="data-val" id="dPosX">0.000 m</span></div>
+      <div class="data-row"><span class="data-label">Y (North +)</span> <span class="data-val" id="dPosY">0.000 m</span></div>
+      <div class="data-row"><span class="data-label">Total Dist</span>  <span class="data-val orange" id="dTotalDist">0.000 m</span></div>
+      <div class="data-row"><span class="data-label">Steps</span>       <span class="data-val green" id="dSteps">0</span></div>
+    </div>
+
+    <div class="pane-title" style="margin-top:4px">LAST MOVE</div>
+    <div class="data-block">
+      <div class="data-row"><span class="data-label">Direction</span> <span class="data-val orange" id="dLastDir">—</span></div>
+      <div class="data-row"><span class="data-label">Distance</span>  <span class="data-val" id="dLastDist">—</span></div>
+    </div>
+
+    <div class="pane-title" style="margin-top:4px">SCALE</div>
+    <div class="data-block">
+      <div class="data-row">
+        <span class="data-label">px / m</span>
+        <input id="cfgScale" type="number" value="80" min="10" max="400"
+          style="width:60px;background:var(--bg);border:1px solid var(--border);color:var(--accent);
+                 font-family:'Share Tech Mono',monospace;font-size:12px;padding:2px 5px;border-radius:2px;text-align:right;">
+      </div>
+    </div>
+
+    <div class="pane-title" style="margin-top:4px">MOVE LOG</div>
+    <div class="path-log" id="pathLog"></div>
+  </div>
+
+  <!-- MAP -->
+  <div class="map-wrap" id="mapWrap">
+    <canvas id="mapCanvas"></canvas>
+
+    <div class="map-info">
+      CURSOR: <span id="cursorCoord">—</span><br>
+      ROVER:  <span id="roverCoord">0.00, 0.00</span>
+    </div>
+
+    <div class="scale-bar">
+      <div class="scale-bar-line" id="scaleBar" style="width:80px"></div>
+      <div class="scale-bar-label" id="scaleLabel">1 m</div>
+    </div>
+
+    <div class="map-controls">
+      <!-- intentionally empty — controls are in header -->
+    </div>
+  </div>
+</div>
+
+<!-- ── FOOTER ── -->
+<footer>
+  <div class="footer-stat">WAYPOINTS: <b id="fWaypoints">0</b></div>
+  <div class="footer-stat">MSGS RX: <b id="fMsgCount">0</b></div>
+  <div class="footer-stat">SOURCE: <b id="fSource">—</b></div>
+  <div class="footer-stat">REPLAY: <b id="fReplay" style="color:var(--muted)">IDLE</b></div>
+  <div class="spacer"></div>
+  <div class="footer-stat" id="fLastMsg" style="color:var(--muted);font-size:10px"></div>
+</footer>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════════════════
+let ws       = null;
+let roverX   = 0;   // metres, East +
+let roverY   = 0;   // metres, North +
+let totalDist = 0;
+let moveCount = 0;
+let msgCount  = 0;
+
+// pathPoints: [{x, y}] — one point per waypoint (including start)
+let pathPoints = [{ x: 0, y: 0 }];
+
+// Recorded move history for replay
+let moveHistory = [];   // [{dir, dist}, ...]
+let isReplaying = false;
+
+// Map view
+let viewOx = 0, viewOy = 0;
+let zoom   = 1.0;
+let showGrid   = true;
+let showTrail  = true;
+let showLabels = true;
+let isDragging = false;
+let dragStart  = { x: 0, y: 0 };
+let dragOrigin = { x: 0, y: 0 };
+
+function pxPerM() { return parseFloat(document.getElementById('cfgScale').value) || 80; }
+
+// ════════════════════════════════════════════════════════════
+//  CANVAS SETUP
+// ════════════════════════════════════════════════════════════
+const mapWrap = document.getElementById('mapWrap');
+const canvas  = document.getElementById('mapCanvas');
+const ctx     = canvas.getContext('2d');
+
+function resizeCanvas() {
+  canvas.width  = mapWrap.clientWidth;
+  canvas.height = mapWrap.clientHeight;
+  drawMap();
+}
+window.addEventListener('resize', resizeCanvas);
+
+// ════════════════════════════════════════════════════════════
+//  COORDINATE HELPERS
+// ════════════════════════════════════════════════════════════
+function w2c(mx, my) {
+  const cx = canvas.width  / 2 + viewOx;
+  const cy = canvas.height / 2 + viewOy;
+  const sc = pxPerM() * zoom;
+  return { x: cx + mx * sc, y: cy - my * sc };  // Y flipped: up = North
+}
+function c2w(px, py) {
+  const cx = canvas.width  / 2 + viewOx;
+  const cy = canvas.height / 2 + viewOy;
+  const sc = pxPerM() * zoom;
+  return { x: (px - cx) / sc, y: (cy - py) / sc };
+}
+
+// ════════════════════════════════════════════════════════════
+//  PROCESS INCOMING MOVE PACKET
+//  Expects: { dir: "F"|"B"|"L"|"R", dist: <metres> }
+// ════════════════════════════════════════════════════════════
+function applyMove(d) {
+  const dir  = (d.dir  || '').toUpperCase().trim();
+  const dist = parseFloat(d.dist);
+  if (!['F','B','L','R'].includes(dir) || isNaN(dist) || dist <= 0) {
+    console.warn('Invalid packet:', d);
+    return;
+  }
+
+  const dx = { F: 0, B: 0, L: -1, R: 1 }[dir] * dist;
+  const dy = { F: 1, B: -1, L: 0, R: 0 }[dir] * dist;
+
+  roverX    += dx;
+  roverY    += dy;
+  totalDist += dist;
+  moveCount++;
+  msgCount++;
+
+  pathPoints.push({ x: roverX, y: roverY });
+
+  // Record for replay (only during normal operation, not during replay itself)
+  if (!isReplaying) {
+    moveHistory.push({ dir, dist });
+    document.getElementById('btnReplay').disabled = false;
+  }
+
+  // UI
+  updateEl('dPosX',      roverX.toFixed(3) + ' m');
+  updateEl('dPosY',      roverY.toFixed(3) + ' m');
+  updateEl('dTotalDist', totalDist.toFixed(3) + ' m');
+  updateEl('dSteps',     moveCount.toString());
+  updateEl('dLastDir',   { F:'FORWARD', B:'BACKWARD', L:'LEFT', R:'RIGHT' }[dir]);
+  updateEl('dLastDist',  dist.toFixed(3) + ' m');
+  updateEl('roverCoord', `${roverX.toFixed(2)}, ${roverY.toFixed(2)}`);
+  updateEl('fWaypoints', (pathPoints.length - 1).toString());
+  updateEl('fMsgCount',  msgCount.toString());
+  document.getElementById('fLastMsg').textContent = 'LAST: ' + new Date().toLocaleTimeString();
+
+  appendMoveLog(moveCount, dir, dist, roverX, roverY);
+  drawMap();
+}
+
+function appendMoveLog(idx, dir, dist, x, y) {
+  const dirLabel = { F:'FWD', B:'BWD', L:'LFT', R:'RGT' }[dir] || dir;
+  const log = document.getElementById('pathLog');
+  const div = document.createElement('div');
+  div.className = 'entry';
+  div.innerHTML =
+    `<span class="idx">#${String(idx).padStart(3,'0')}</span>` +
+    `<span class="dir">${dirLabel}</span>` +
+    `<span class="dist">${dist.toFixed(2)}m</span>` +
+    `<span class="coord">→ ${x.toFixed(2)}, ${y.toFixed(2)}</span>`;
+  log.appendChild(div);
+  log.scrollTop = log.scrollHeight;
+}
+
+function updateEl(id, val) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = val;
+}
+
+// ════════════════════════════════════════════════════════════
+//  DRAW MAP
+// ════════════════════════════════════════════════════════════
+function drawMap() {
+  const W = canvas.width, H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#0a0c0f';
+  ctx.fillRect(0, 0, W, H);
+
+  if (showGrid)  drawGrid();
+  drawAxes();
+  if (showTrail && pathPoints.length > 1) drawTrail();
+  drawRover();
+  updateScaleBar();
+}
+
+function drawGrid() {
+  const W = canvas.width, H = canvas.height;
+  const sc = pxPerM() * zoom;
+
+  let step = 1;
+  if (sc < 20)  step = 5;
+  if (sc < 8)   step = 10;
+  if (sc > 200) step = 0.5;
+  if (sc > 400) step = 0.25;
+
+  const tl = c2w(0, 0), br = c2w(W, H);
+  const x0 = Math.floor(tl.x / step) * step;
+  const x1 = Math.ceil(br.x / step)  * step;
+  const y0 = Math.floor(br.y / step) * step;
+  const y1 = Math.ceil(tl.y / step)  * step;
+
+  ctx.lineWidth = 1;
+  for (let gx = x0; gx <= x1; gx += step) {
+    const isMajor = Math.abs(Math.round(gx / step) % 5) === 0;
+    ctx.strokeStyle = isMajor ? '#1a2530' : '#111820';
+    ctx.beginPath();
+    const p = w2c(gx, 0);
+    ctx.moveTo(p.x, 0); ctx.lineTo(p.x, H);
+    ctx.stroke();
+    if (showLabels && isMajor && gx !== 0) {
+      ctx.fillStyle = '#2a3a48';
+      ctx.font = '9px Share Tech Mono';
+      ctx.textAlign = 'center';
+      const lp = w2c(gx, 0);
+      ctx.fillText(gx.toFixed(step < 1 ? 1 : 0) + 'm', lp.x, H - 4);
+    }
+  }
+  for (let gy = y0; gy <= y1; gy += step) {
+    const isMajor = Math.abs(Math.round(gy / step) % 5) === 0;
+    ctx.strokeStyle = isMajor ? '#1a2530' : '#111820';
+    ctx.beginPath();
+    const p = w2c(0, gy);
+    ctx.moveTo(0, p.y); ctx.lineTo(W, p.y);
+    ctx.stroke();
+    if (showLabels && isMajor && gy !== 0) {
+      ctx.fillStyle = '#2a3a48';
+      ctx.font = '9px Share Tech Mono';
+      ctx.textAlign = 'left';
+      const lp = w2c(0, gy);
+      ctx.fillText(gy.toFixed(step < 1 ? 1 : 0) + 'm', 4, lp.y - 2);
+    }
+  }
+}
+
+function drawAxes() {
+  const W = canvas.width, H = canvas.height;
+  const ox = w2c(0, 0);
+
+  ctx.strokeStyle = '#ff6b3530';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, ox.y); ctx.lineTo(W, ox.y); ctx.stroke();
+
+  ctx.strokeStyle = '#00e5ff30';
+  ctx.beginPath(); ctx.moveTo(ox.x, 0); ctx.lineTo(ox.x, H); ctx.stroke();
+
+  // Origin crosshair
+  ctx.strokeStyle = '#39ff14';
+  ctx.lineWidth = 1.5;
+  const r = 6;
+  ctx.beginPath();
+  ctx.moveTo(ox.x - r, ox.y); ctx.lineTo(ox.x + r, ox.y);
+  ctx.moveTo(ox.x, ox.y - r); ctx.lineTo(ox.x, ox.y + r);
+  ctx.stroke();
+
+  if (showLabels) {
+    ctx.fillStyle = '#39ff14';
+    ctx.font = 'bold 10px Share Tech Mono';
+    ctx.textAlign = 'left';
+    ctx.fillText('0,0', ox.x + 7, ox.y - 4);
+
+    ctx.fillStyle = '#ff6b3570';
+    ctx.font = '10px Share Tech Mono';
+    ctx.textAlign = 'right';
+    ctx.fillText('E+', W - 6, ox.y - 4);
+
+    ctx.fillStyle = '#00e5ff70';
+    ctx.textAlign = 'left';
+    ctx.fillText('N+', ox.x + 4, 12);
+  }
+}
+
+function drawTrail() {
+  const n = pathPoints.length;
+  if (n < 2) return;
+
+  // Draw connected line segments — full trail
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(0,229,255,0.7)';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  const p0 = w2c(pathPoints[0].x, pathPoints[0].y);
+  ctx.moveTo(p0.x, p0.y);
+  for (let i = 1; i < n; i++) {
+    const p = w2c(pathPoints[i].x, pathPoints[i].y);
+    ctx.lineTo(p.x, p.y);
+  }
+  ctx.stroke();
+
+  // Dots at every waypoint
+  for (let i = 0; i < n; i++) {
+    const p = w2c(pathPoints[i].x, pathPoints[i].y);
+    const isOrigin = i === 0;
+    const r = isOrigin ? 5 : 3;
+    ctx.fillStyle = isOrigin ? '#39ff14' : 'rgba(0,229,255,0.9)';
+    ctx.shadowColor = isOrigin ? '#39ff14' : '#00e5ff';
+    ctx.shadowBlur  = isOrigin ? 8 : 4;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Coordinate label at each waypoint
+    if (showLabels && i > 0) {
+      ctx.fillStyle = '#2a6a7a';
+      ctx.font = '8px Share Tech Mono';
+      ctx.textAlign = 'left';
+      ctx.fillText(
+        `${pathPoints[i].x.toFixed(1)},${pathPoints[i].y.toFixed(1)}`,
+        p.x + 5, p.y - 3
+      );
+    }
+  }
+}
+
+function drawRover() {
+  const p  = w2c(roverX, roverY);
+  const sz = Math.max(8, 10 * zoom);
+
+  ctx.save();
+  ctx.translate(p.x, p.y);
+
+  // Body
+  ctx.strokeStyle = '#ff6b35';
+  ctx.fillStyle   = '#ff6b3522';
+  ctx.lineWidth   = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(-sz * 0.55, -sz * 0.75, sz * 1.1, sz * 1.5, 2);
+  ctx.fill();
+  ctx.stroke();
+
+  // Arrow (always points North = up, since no heading)
+  ctx.strokeStyle = '#ff6b35';
+  ctx.lineWidth   = 2;
+  ctx.beginPath();
+  ctx.moveTo(0, -sz * 0.75);
+  ctx.lineTo(0,  sz * 0.3);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(-sz * 0.3, -sz * 0.35);
+  ctx.lineTo(0,          -sz * 0.85);
+  ctx.lineTo( sz * 0.3, -sz * 0.35);
+  ctx.stroke();
+
+  ctx.restore();
+
+  // Coord label
+  if (showLabels) {
+    ctx.fillStyle = '#ff6b35';
+    ctx.font = '9px Share Tech Mono';
+    ctx.textAlign = 'left';
+    ctx.fillText(`${roverX.toFixed(2)}, ${roverY.toFixed(2)}`, p.x + sz + 4, p.y - 2);
+  }
+}
+
+function updateScaleBar() {
+  const sc = pxPerM() * zoom;
+  const bar = document.getElementById('scaleBar');
+  bar.style.width = sc + 'px';
+  document.getElementById('scaleLabel').textContent = '1 m';
+}
+
+// ════════════════════════════════════════════════════════════
+//  WEBSOCKET
+// ════════════════════════════════════════════════════════════
+function connectWS() {
+  const url = document.getElementById('wsUrl').value.trim();
+  if (ws) ws.close();
+  ws = new WebSocket(url);
+
+  ws.onopen = () => {
+    setStatus('live', 'LIVE — ' + url.split('/')[2]);
+    updateEl('fSource', 'WebSocket');
+  };
+  ws.onmessage = (e) => {
+    try {
+      const pkt = JSON.parse(e.data);
+      if (pkt.reset) {
+        document.getElementById('btnClear').click();
+        return;
+      }
+      if (pkt.replay_start) {
+        isReplaying = true;
+        updateEl('fReplay', 'RUNNING');
+        document.getElementById('fReplay').style.color = 'var(--warn)';
+        // Reset position for replay draw
+        roverX = 0; roverY = 0; totalDist = 0; moveCount = 0;
+        pathPoints = [{ x: 0, y: 0 }];
+        document.getElementById('pathLog').innerHTML = '';
+        updateEl('fWaypoints', '0');
+        drawMap();
+        return;
+      }
+      if (pkt.replay_done) {
+        isReplaying = false;
+        updateEl('fReplay', 'DONE');
+        document.getElementById('fReplay').style.color = 'var(--accent2)';
+        document.getElementById('btnReplay').disabled = false;
+        document.getElementById('btnReplay').classList.remove('active');
+        return;
+      }
+      applyMove(pkt);
+    } catch(err) {
+      console.warn('WS parse error', err, e.data);
+    }
+  };
+  ws.onerror = () => setStatus('error', 'WS ERROR');
+  ws.onclose = () => {
+    setStatus('off', 'DISCONNECTED');
+    updateEl('fSource', '—');
+  };
+}
+
+function setStatus(state, text) {
+  const dot    = document.getElementById('wsDot');
+  const status = document.getElementById('wsStatus');
+  dot.className = 'dot ' + (state === 'live' ? 'live' : state === 'error' ? 'error' : '');
+  status.textContent = text;
+}
+
+// ════════════════════════════════════════════════════════════
+//  BUTTONS
+// ════════════════════════════════════════════════════════════
+document.getElementById('btnConnect').addEventListener('click', connectWS);
+
+document.getElementById('btnReplay').addEventListener('click', () => {
+  if (!ws || ws.readyState !== WebSocket.OPEN) {
+    alert('Not connected to rover.');
+    return;
+  }
+  if (moveHistory.length === 0) return;
+  document.getElementById('btnReplay').disabled = true;
+  document.getElementById('btnReplay').classList.add('active');
+  updateEl('fReplay', 'SENDING');
+  document.getElementById('fReplay').style.color = 'var(--accent)';
+  ws.send(JSON.stringify({ replay: moveHistory }));
+});
+
+document.getElementById('btnClear').addEventListener('click', () => {
+  roverX = 0; roverY = 0; totalDist = 0; moveCount = 0;
+  pathPoints = [{ x: 0, y: 0 }];
+  moveHistory = [];
+  isReplaying = false;
+  document.getElementById('pathLog').innerHTML = '';
+  document.getElementById('btnReplay').disabled = true;
+  document.getElementById('btnReplay').classList.remove('active');
+  updateEl('fReplay', 'IDLE');
+  document.getElementById('fReplay').style.color = 'var(--muted)';
+  updateEl('dPosX', '0.000 m');
+  updateEl('dPosY', '0.000 m');
+  updateEl('dTotalDist', '0.000 m');
+  updateEl('dSteps', '0');
+  updateEl('dLastDir', '—');
+  updateEl('dLastDist', '—');
+  updateEl('roverCoord', '0.00, 0.00');
+  updateEl('fWaypoints', '0');
+  drawMap();
+});
+
+document.getElementById('btnCenter').addEventListener('click', () => {
+  viewOx = 0; viewOy = 0; zoom = 1.0;
+  drawMap();
+});
+document.getElementById('btnZoomIn').addEventListener('click', () => { zoom = Math.min(zoom * 1.3, 20); drawMap(); });
+document.getElementById('btnZoomOut').addEventListener('click', () => { zoom = Math.max(zoom / 1.3, 0.1); drawMap(); });
+
+document.getElementById('btnGridToggle').addEventListener('click', function() {
+  showGrid = !showGrid;
+  this.classList.toggle('active', showGrid);
+  drawMap();
+});
+document.getElementById('btnTrailToggle').addEventListener('click', function() {
+  showTrail = !showTrail;
+  this.classList.toggle('active', showTrail);
+  drawMap();
+});
+document.getElementById('btnLabels').addEventListener('click', function() {
+  showLabels = !showLabels;
+  this.classList.toggle('active', showLabels);
+  drawMap();
+});
+
+document.getElementById('cfgScale').addEventListener('input', drawMap);
+
+// ════════════════════════════════════════════════════════════
+//  MAP PAN / ZOOM (mouse)
+// ════════════════════════════════════════════════════════════
+canvas.addEventListener('mousedown', e => {
+  isDragging = true;
+  dragStart  = { x: e.clientX, y: e.clientY };
+  dragOrigin = { x: viewOx, y: viewOy };
+  canvas.style.cursor = 'grabbing';
+});
+canvas.addEventListener('mousemove', e => {
+  const rect = canvas.getBoundingClientRect();
+  const wc = c2w(e.clientX - rect.left, e.clientY - rect.top);
+  document.getElementById('cursorCoord').textContent = `${wc.x.toFixed(2)}, ${wc.y.toFixed(2)}`;
+  if (isDragging) {
+    viewOx = dragOrigin.x + (e.clientX - dragStart.x);
+    viewOy = dragOrigin.y + (e.clientY - dragStart.y);
+    drawMap();
+  }
+});
+canvas.addEventListener('mouseup',    () => { isDragging = false; canvas.style.cursor = 'crosshair'; });
+canvas.addEventListener('mouseleave', () => { isDragging = false; canvas.style.cursor = 'crosshair'; });
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  zoom = Math.max(0.1, Math.min(20, zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+  drawMap();
+}, { passive: false });
+
+// Touch pan
+let touchStart = null;
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1)
+    touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, ox: viewOx, oy: viewOy };
+});
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (touchStart && e.touches.length === 1) {
+    viewOx = touchStart.ox + (e.touches[0].clientX - touchStart.x);
+    viewOy = touchStart.oy + (e.touches[0].clientY - touchStart.y);
+    drawMap();
+  }
+}, { passive: false });
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+// Activate toggle buttons
+['btnGridToggle','btnTrailToggle','btnLabels'].forEach(id =>
+  document.getElementById(id).classList.add('active')
+);
+
+resizeCanvas();
+</script>
+
+<!--
+══════════════════════════════════════════════════════════════
+  ESP32 Arduino sketch — send move commands to dashboard
+══════════════════════════════════════════════════════════════
+
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncWebSocket.h>
+#include <ArduinoJson.h>
+
+const char* ssid     = "RoverAP";
+const char* password = "rover1234";
+
+AsyncWebServer server(80);
+AsyncWebSocket ws("/ws");
+
+void onWsEvent(AsyncWebSocket* s, AsyncWebSocketClient* c,
+               AwsEventType type, void* arg, uint8_t* data, size_t len) {
+  // handle as needed
+}
+
+void setup() {
+  WiFi.softAP(ssid, password);
+  ws.onEvent(onWsEvent);
+  server.addHandler(&ws);
+  server.begin();
+}
+
+// Call this after each movement completes:
+//   dir  = "F" | "B" | "L" | "R"
+//   dist = metres moved (float)
+void sendMove(const char* dir, float dist) {
+  StaticJsonDocument<64> doc;
+  doc["dir"]  = dir;
+  doc["dist"] = dist;
+  String out;
+  serializeJson(doc, out);
+  ws.textAll(out);
+  ws.cleanupClients();
+}
+
+// Example usage in loop():
+// sendMove("F", 1.0);   // forward 1 metre
+// sendMove("R", 0.5);   // right 0.5 metres
+-->
+</body>
+</html>
