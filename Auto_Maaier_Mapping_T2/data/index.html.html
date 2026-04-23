@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Live Map</title>
+  <style>
+    body { font-family: sans-serif; }
+    canvas { border: 1px solid #000; }
+  </style>
+</head>
+<body>
+  <h2>🧭 Perimeter Map</h2>
+  <canvas id="mapCanvas" width="500" height="500"></canvas>
+  <script>
+    const canvas = document.getElementById(\"mapCanvas\");
+    const ctx = canvas.getContext(\"2d\");
+
+    async function fetchAndDraw() {
+      const res = await fetch(\"/map.txt\");
+      const data = await res.text();
+      const lines = data.trim().split(\"\\n\").slice(1);
+      const points = lines.map(l => l.split(\",\").map(Number));
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (points.length < 2) return;
+
+      let minX = Math.min(...points.map(p => p[0]));
+      let minY = Math.min(...points.map(p => p[1]));
+      let maxX = Math.max(...points.map(p => p[0]));
+      let maxY = Math.max(...points.map(p => p[1]));
+
+      let scale = Math.min(460 / (maxX - minX + 0.1), 460 / (maxY - minY + 0.1));
+
+      ctx.beginPath();
+      ctx.strokeStyle = \"red\";
+      points.forEach((p, i) => {
+        let x = (p[0] - minX) * scale + 20;
+        let y = canvas.height - ((p[1] - minY) * scale + 20);
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      });
+      ctx.stroke();
+    }
+
+    setInterval(fetchAndDraw, 2000);
+    fetchAndDraw();
+  </script>
+</body>
+</html>
