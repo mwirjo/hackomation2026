@@ -22,8 +22,8 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 
-const char* ssid     = "RoverAP";
-const char* password = "rover1234";
+const char* ssid     = "HUAWEI-2.4G-pM7X";
+const char* password = "GDm6PwGD";
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");

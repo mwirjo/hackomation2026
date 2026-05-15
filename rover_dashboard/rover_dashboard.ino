@@ -24,9 +24,47 @@
 
 const char* ssid     = "HUAWEI-2.4G-pM7X";
 const char* password = "GDm6PwGD";
+const char* ap_ssid     = "HUAWEI-2.4G-pM7X";
+const char* ap_password = "GDm6PwGD";
 
 AsyncWebServer server(80);
 AsyncWebSocket ws("/ws");
+void initWifi() {
+  // --- 1. Try connecting to home WiFi (STA mode) ---
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  Serial.print("Connecting to WiFi");
+
+  unsigned long startAttemptTime = millis();
+  const unsigned long WIFI_TIMEOUT_MS = 10000; // 10 second timeout
+
+  while (WiFi.status() != WL_CONNECTED &&
+         millis() - startAttemptTime < WIFI_TIMEOUT_MS) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  // --- 2. Fall back to AP mode if STA failed ---
+  if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("STA failed — starting Access Point...");
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(ap_ssid, ap_password);
+
+    Serial.print("AP started! SSID: ");
+    Serial.println(ap_ssid);
+    Serial.print("AP IP: ");
+    Serial.println(WiFi.softAPIP()); // default: 192.168.4.1
+  } else {
+    Serial.print("Connected! IP: ");
+    Serial.println(WiFi.localIP());
+  }
+
+  // --- 3. Mount SPIFFS ---
+  if (!SPIFFS.begin(true)) {
+    Serial.println("SPIFFS mount failed — HTML won't serve from flash.");
+  }
+}
 
 // ─── Send one move packet to the dashboard ───────────────────
 // dir  : "F" | "B" | "L" | "R"
@@ -94,21 +132,7 @@ void setup() {
   Serial.begin(115200);
 
   // Connect to home WiFi
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  Serial.print("Connecting to WiFi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println();
-  Serial.print("Connected! IP: ");
-  Serial.println(WiFi.localIP());   // <── open this IP in your browser
-
-  if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS mount failed — HTML won't serve from flash.");
-    // Dashboard can still be opened from file; WS will still work.
-  }
+  initWifi();
 
   ws.onEvent(onWsEvent);
   server.addHandler(&ws);
