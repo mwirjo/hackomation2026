@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>E.V.E — Field Control</title>
+<link href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&family=Bebas+Neue&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #090b0d;
+  --bg2:      #0e1215;
+  --bg3:      #141a1f;
+  --border:   #1e2d20;
+  --amber:    #f5a623;
+  --green:    #3dff6e;
+  --green2:   #1a8c3a;
+  --red:      #ff3b3b;
+  --blue:     #3bcfff;
+  --text:     #c8d4c0;
+  --dim:      #4a5e4a;
+  --glow:     rgba(61,255,110,0.15);
+  --amberglow:rgba(245,166,35,0.15);
+}
+
+*{ margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+html{ scroll-behavior:smooth; }
+
+body {
+  font-family: 'Share Tech Mono', monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.03) 2px, rgba(0,0,0,0.03) 4px);
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.hdr {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(9,11,13,0.97);
+  border-bottom: 1px solid var(--border);
+  padding: 0 1rem;
+  height: 56px;
+  display: flex; align-items: center; justify-content: space-between;
+  backdrop-filter: blur(12px);
+}
+.hdr-logo {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.6rem;
+  letter-spacing: 6px;
+  color: var(--green);
+  text-shadow: 0 0 20px rgba(61,255,110,0.4);
+}
+.hdr-sub {
+  font-size: 0.58rem;
+  letter-spacing: 2px;
+  color: var(--dim);
+  margin-left: 0.6rem;
+  margin-top: 4px;
+}
+.ws-badge {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.6rem; letter-spacing: 1.5px; color: var(--dim);
+}
+.ws-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--red);
+  transition: background 0.3s;
+}
+.ws-dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+
+.body { max-width: 560px; margin: 0 auto; padding: 1rem; display: flex; flex-direction: column; gap: 1rem; }
+
+.panel {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+.panel::before {
+  content: '';
+  position: absolute; top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: var(--green2);
+}
+.panel.amber::before { background: var(--amber); }
+.panel.blue::before  { background: var(--blue); }
+.panel.red::before   { background: var(--red); }
+
+.panel-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.7rem 1rem 0.7rem 1.3rem;
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.2);
+}
+.panel-title {
+  font-size: 0.62rem; letter-spacing: 3px;
+  color: var(--green); text-transform: uppercase;
+}
+.panel.amber .panel-title { color: var(--amber); }
+.panel.blue  .panel-title { color: var(--blue); }
+.panel.red   .panel-title { color: var(--red); }
+
+.panel-body { padding: 1rem 1rem 1rem 1.3rem; }
+
+.mode-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; }
+.mode-tab {
+  padding: 0.75rem;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--dim);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.72rem; letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+.mode-tab.active {
+  background: rgba(61,255,110,0.08);
+  border-color: var(--green2);
+  color: var(--green);
+}
+
+.dpad-wrap { display: flex; flex-direction: column; align-items: center; gap: 0.8rem; }
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 88px);
+  grid-template-rows: repeat(3, 88px);
+  gap: 4px;
+}
+.dp {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 1.5rem;
+  color: var(--dim);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.08s;
+  user-select: none;
+  position: relative;
+  overflow: hidden;
+}
+.dp::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--glow);
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+.dp:active::after, .dp.pressed::after { opacity: 1; }
+.dp:active, .dp.pressed {
+  border-color: var(--green2);
+  color: var(--green);
+  transform: scale(0.94);
+}
+.dp.stop-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.75rem; letter-spacing: 1px;
+  color: var(--red);
+  border-color: rgba(255,59,59,0.25);
+  background: rgba(255,59,59,0.05);
+}
+.dp.stop-btn:active { border-color: var(--red); }
+.dp-empty { visibility: hidden; }
+
+.spd-row { display: flex; align-items: center; gap: 0.8rem; width: 100%; max-width: 280px; }
+.spd-lbl { font-size: 0.62rem; letter-spacing: 2px; color: var(--dim); white-space: nowrap; }
+input[type=range] {
+  flex: 1; -webkit-appearance: none;
+  height: 3px; border-radius: 2px;
+  background: var(--bg3); outline: none;
+  border: 1px solid var(--border);
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--green2);
+  border: 2px solid var(--green);
+  cursor: pointer;
+}
+.spd-val { font-size: 1rem; color: var(--green); min-width: 38px; text-align: right; }
+
+.joy-area { display: flex; flex-direction: column; align-items: center; gap: 0.8rem; }
+.joy-base {
+  position: relative;
+  width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(circle, #101a12 0%, var(--bg3) 100%);
+  border: 1px solid var(--border);
+  touch-action: none; cursor: grab;
+  box-shadow: inset 0 0 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(61,255,110,0.05);
+}
+.joy-ring {
+  position: absolute; inset: 16px; border-radius: 50%;
+  border: 1px dashed rgba(61,255,110,0.12);
+  pointer-events: none;
+}
+.joy-ring2 {
+  position: absolute; inset: 44px; border-radius: 50%;
+  border: 1px dashed rgba(61,255,110,0.07);
+  pointer-events: none;
+}
+.joy-stick {
+  position: absolute;
+  width: 72px; height: 72px; border-radius: 50%;
+  background: radial-gradient(circle at 38% 35%, #2a5c30, #0d1f10);
+  border: 2px solid var(--green2);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), 0 0 12px rgba(61,255,110,0.2);
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  transition: box-shadow 0.1s;
+}
+.joy-label {
+  position: absolute;
+  font-size: 0.52rem; letter-spacing: 1px; color: var(--dim);
+  pointer-events: none;
+}
+.joy-label.t { top: 8px; left: 50%; transform: translateX(-50%); }
+.joy-label.b { bottom: 8px; left: 50%; transform: translateX(-50%); }
+.joy-label.l { left: 8px; top: 50%; transform: translateY(-50%); }
+.joy-label.r { right: 8px; top: 50%; transform: translateY(-50%); }
+.joy-dir {
+  font-size: 0.65rem; letter-spacing: 3px; color: var(--dim);
+  height: 16px; text-align: center;
+}
+
+.toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 1rem;
+}
+.toggle-lbl { font-size: 0.62rem; letter-spacing: 2px; color: var(--dim); }
+.toggle-lbl span.on { color: var(--green); }
+.sw { position: relative; width: 52px; height: 26px; cursor: pointer; }
+.sw input { opacity: 0; width: 0; height: 0; }
+.sw-track {
+  position: absolute; inset: 0; border-radius: 13px;
+  background: var(--bg3); border: 1px solid var(--border);
+  transition: all 0.2s;
+}
+.sw-thumb {
+  position: absolute; top: 3px; left: 3px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: var(--dim); transition: all 0.2s;
+}
+.sw input:checked ~ .sw-track { border-color: var(--green2); background: rgba(61,255,110,0.08); }
+.sw input:checked ~ .sw-thumb { left: 27px; background: var(--green); }
+
+.sensor-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+.sen {
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.7rem 0.5rem;
+  text-align: center;
+}
+.sen-val {
+  font-family: 'Bebas Neue', sans-serif;
+  font-size: 1.4rem; letter-spacing: 1px;
+  color: var(--green);
+  line-height: 1;
+}
+.sen-lbl {
+  font-size: 0.52rem; letter-spacing: 2px;
+  color: var(--dim); text-transform: uppercase;
+  margin-top: 0.25rem;
+}
+.batt-bar {
+  height: 4px; background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 2px; overflow: hidden;
+  margin-top: 0.75rem;
+}
+.batt-fill {
+  height: 100%; width: 75%;
+  background: linear-gradient(to right, var(--green2), var(--green));
+  transition: width 0.5s, background 0.3s;
+}
+
+.auto-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.auto-btn {
+  padding: 0.85rem 0.6rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--dim); font-family: 'Share Tech Mono', monospace;
+  font-size: 0.7rem; letter-spacing: 1px;
+  cursor: pointer; text-align: left;
+  transition: all 0.15s;
+  display: flex; gap: 0.5rem; align-items: flex-start;
+}
+.auto-btn .ico { font-size: 1.1rem; flex-shrink: 0; }
+.auto-btn .sub { font-size: 0.55rem; color: var(--dim); margin-top: 0.2rem; letter-spacing: 0; }
+.auto-btn:hover { border-color: var(--green2); color: var(--text); }
+.auto-btn.running {
+  background: rgba(61,255,110,0.06);
+  border-color: var(--green2);
+  color: var(--green);
+}
+.auto-stop {
+  width: 100%; margin-top: 0.5rem;
+  padding: 0.7rem;
+  background: rgba(255,59,59,0.05);
+  border: 1px solid rgba(255,59,59,0.25);
+  border-radius: 3px;
+  color: var(--red); font-family: 'Share Tech Mono', monospace;
+  font-size: 0.7rem; letter-spacing: 2px;
+  cursor: pointer; transition: all 0.15s;
+}
+.auto-stop:hover { background: rgba(255,59,59,0.12); border-color: var(--red); }
+
+.att-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.att-btn {
+  padding: 0.85rem 0.6rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--dim); font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem; letter-spacing: 1px;
+  cursor: pointer; display: flex; flex-direction: column;
+  align-items: center; gap: 0.4rem;
+  transition: all 0.15s;
+}
+.att-btn .ico { font-size: 1.4rem; }
+.att-btn.on {
+  background: rgba(61,255,110,0.06);
+  border-color: var(--green2); color: var(--green);
+}
+
+.gps-row {
+  display: flex; gap: 0.5rem; margin-bottom: 0.75rem;
+}
+.gps-box {
+  flex: 1; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 3px;
+  padding: 0.6rem; text-align: center;
+}
+.gps-val {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.85rem; color: var(--blue);
+}
+.gps-lbl { font-size: 0.5rem; letter-spacing: 2px; color: var(--dim); margin-top: 0.2rem; }
+
+.map-canvas {
+  width: 100%; height: 180px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 3px; overflow: hidden; margin: 0.75rem 0;
+}
+#mapCanvas { display: block; width: 100%; height: 100%; }
+
+.coord-hdr {
+  display: grid; grid-template-columns: 24px 1fr 1fr 56px;
+  gap: 0.4rem; padding: 0.35rem 0.6rem;
+  background: rgba(0,0,0,0.3); border-radius: 3px 3px 0 0;
+  font-size: 0.55rem; letter-spacing: 2px; color: var(--dim);
+}
+.coord-body {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-top: none; border-radius: 0 0 3px 3px;
+  max-height: 100px; overflow-y: auto;
+}
+.coord-row {
+  display: grid; grid-template-columns: 24px 1fr 1fr 56px;
+  gap: 0.4rem; padding: 0.3rem 0.6rem;
+  font-size: 0.62rem; color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.coord-row:last-child { border-bottom: none; }
+.coord-row .n { color: var(--dim); }
+.coord-empty { padding: 0.75rem; text-align: center; font-size: 0.65rem; color: var(--dim); }
+
+.map-actions { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.map-btn {
+  flex: 1; padding: 0.6rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--dim); font-family: 'Share Tech Mono', monospace;
+  font-size: 0.65rem; letter-spacing: 1px; cursor: pointer; transition: all 0.15s;
+}
+.map-btn.active { border-color: var(--green2); color: var(--green); background: rgba(61,255,110,0.06); }
+.map-btn.danger { border-color: rgba(255,59,59,0.25); color: var(--red); }
+
+.sched-row {
+  display: flex; align-items: center; gap: 0.6rem;
+  margin-bottom: 0.6rem; flex-wrap: wrap;
+}
+.sched-row label { font-size: 0.65rem; color: var(--dim); min-width: 120px; letter-spacing: 1px; }
+.sched-row input[type=number] {
+  width: 58px; padding: 0.4rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 0.85rem;
+  text-align: center;
+}
+.sched-status {
+  padding: 0.6rem 0.8rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  font-size: 0.65rem; color: var(--dim); margin: 0.6rem 0;
+}
+.sched-btns { display: flex; gap: 0.5rem; }
+.sched-btns button {
+  flex: 1; padding: 0.6rem;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  font-family: 'Share Tech Mono', monospace; font-size: 0.65rem; letter-spacing: 1px; cursor: pointer;
+}
+.sched-btns .s-start { border-color: rgba(61,255,110,0.3); color: var(--green); }
+.sched-btns .s-stop  { border-color: rgba(255,59,59,0.25); color: var(--red); }
+
+.alert-panel {
+  display: none;
+  background: rgba(245,166,35,0.05);
+  border: 1px solid rgba(245,166,35,0.3);
+  border-radius: 3px; padding: 0.8rem 1rem;
+  margin-bottom: 0.5rem;
+}
+.alert-panel .alert-title {
+  font-size: 0.6rem; letter-spacing: 2px; color: var(--amber); margin-bottom: 0.4rem;
+}
+.alert-panel .alert-msg { font-size: 0.72rem; color: var(--text); margin-bottom: 0.5rem; }
+.alert-panel .alert-btn {
+  padding: 0.35rem 0.8rem;
+  background: rgba(245,166,35,0.1); border: 1px solid rgba(245,166,35,0.35);
+  border-radius: 3px; color: var(--amber); font-family: 'Share Tech Mono', monospace;
+  font-size: 0.65rem; letter-spacing: 1px; cursor: pointer;
+}
+
+.log-box {
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 3px;
+  padding: 0.6rem; height: 120px; overflow-y: auto;
+  font-size: 0.65rem; color: var(--dim);
+  display: flex; flex-direction: column; gap: 1px;
+}
+.log-ok   { color: var(--green); }
+.log-err  { color: var(--red); }
+.log-info { color: var(--blue); }
+.log-warn { color: var(--amber); }
+
+footer {
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  text-align: center; padding: 1.5rem;
+  font-size: 0.58rem; letter-spacing: 2px; color: var(--dim);
+}
+footer .ft { font-family: 'Bebas Neue', sans-serif; font-size: 1.1rem; color: var(--green); letter-spacing: 5px; display: block; margin-bottom: 0.3rem; }
+
+.grid-bg {
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(61,255,110,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(61,255,110,0.015) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+@keyframes fadein { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+.panel { animation: fadein 0.3s ease both; }
+.panel:nth-child(2) { animation-delay:.05s }
+.panel:nth-child(3) { animation-delay:.1s }
+.panel:nth-child(4) { animation-delay:.15s }
+.panel:nth-child(5) { animation-delay:.2s }
+
+@media(max-width:400px){
+  .dpad{ grid-template-columns:repeat(3,78px); grid-template-rows:repeat(3,78px); }
+  .dp{ font-size:1.3rem; }
+}
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+
+<header class="hdr">
+  <div style="display:flex;align-items:baseline;gap:0.4rem">
+    <div class="hdr-logo">E.V.E</div>
+    <div class="hdr-sub">FIELD OPS v2</div>
+  </div>
+  <div class="ws-badge">
+    <div class="ws-dot" id="wsDot"></div>
+    <span id="wsLabel">OFFLINE</span>
+  </div>
+</header>
+
+<div class="body" style="position:relative;z-index:1;">
+
+<div class="panel">
+  <div class="panel-hdr"><span class="panel-title">// DRIVE MODE</span></div>
+  <div class="panel-body" style="padding:0.6rem 0.6rem 0.6rem 1.3rem;">
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="btnManual" onclick="setMode('manual')">⚙ MANUAL</button>
+      <button class="mode-tab"        id="btnAuto"   onclick="setMode('auto')">◈ AUTONOMOUS</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel" id="manualCard">
+  <div class="panel-hdr">
+    <span class="panel-title">// CONTROLS</span>
+    <div class="toggle-row" style="margin:0;gap:0.8rem;">
+      <span class="toggle-lbl" id="ctrlLbl"><span class="on">D-PAD</span> / JOY</span>
+      <label class="sw">
+        <input type="checkbox" id="ctrlSwitch" onchange="switchCtrl()">
+        <div class="sw-track"></div>
+        <div class="sw-thumb"></div>
+      </label>
+    </div>
+  </div>
+  <div class="panel-body">
+
+    <div class="alert-panel" id="soilAlert">
+      <div class="alert-title">⚠ SOIL ALERT</div>
+      <div class="alert-msg" id="soilMsg">Soil moisture low — activate water spray.</div>
+      <button class="alert-btn" onclick="toggleAtt('waterspray')">ACTIVATE WATER SPRAY</button>
+    </div>
+
+    <div id="dpadWrap">
+      <div class="dpad-wrap">
+        <div class="dpad">
+          <div class="dp-empty"></div>
+          <button class="dp" id="bFwd"
+            ontouchstart="startCmd('forward')" ontouchend="stopCmd()"
+            onmousedown="startCmd('forward')" onmouseup="stopCmd()">▲</button>
+          <div class="dp-empty"></div>
+          <button class="dp" id="bLeft"
+            ontouchstart="startCmd('left')" ontouchend="stopCmd()"
+            onmousedown="startCmd('left')" onmouseup="stopCmd()">◀</button>
+          <button class="dp stop-btn" onclick="sendCmd('stop')">STOP</button>
+          <button class="dp" id="bRight"
+            ontouchstart="startCmd('right')" ontouchend="stopCmd()"
+            onmousedown="startCmd('right')" onmouseup="stopCmd()">▶</button>
+          <div class="dp-empty"></div>
+          <button class="dp" id="bRev"
+            ontouchstart="startCmd('reverse')" ontouchend="stopCmd()"
+            onmousedown="startCmd('reverse')" onmouseup="stopCmd()">▼</button>
+          <div class="dp-empty"></div>
+        </div>
+        <div class="spd-row">
+          <span class="spd-lbl">SPD</span>
+          <input type="range" id="speedSlider" min="0" max="100" value="60" step="1" oninput="setSpd(this.value)">
+          <span class="spd-val" id="speedVal">60%</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="joyWrap" style="display:none;">
+      <div class="joy-area">
+        <div class="joy-dir" id="joyDir">— IDLE —</div>
+        <div class="joy-base" id="joyBase">
+          <div class="joy-ring"></div>
+          <div class="joy-ring2"></div>
+          <span class="joy-label t">FWD</span>
+          <span class="joy-label b">REV</span>
+          <span class="joy-label l">L</span>
+          <span class="joy-label r">R</span>
+          <div class="joy-stick" id="joyStick"></div>
+        </div>
+        <div class="spd-row">
+          <span class="spd-lbl">SPD</span>
+          <input type="range" id="speedSlider2" min="0" max="100" value="60" step="1" oninput="setSpd(this.value)">
+          <span class="spd-val" id="speedVal2">60%</span>
+        </div>
+        <button class="dp stop-btn" style="width:160px;height:44px;font-size:0.72rem;letter-spacing:2px;" onclick="sendCmd('stop')">■ STOP</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="panel" id="autoCard" style="display:none;">
+  <div class="panel-hdr"><span class="panel-title">// AUTONOMOUS OPS</span></div>
+  <div class="panel-body">
+    <div class="auto-grid">
+      <button class="auto-btn" id="btnRunPath"   onclick="autoAct('runpath')">   <span class="ico">▶</span>  <div><div>RUN PATH</div>   <div class="sub">Follow saved GPS route</div></div></button>
+      <button class="auto-btn" id="btnScan"      onclick="autoAct('scan')">      <span class="ico">⊕</span>  <div><div>SCAN FIELD</div> <div class="sub">Grid pattern scan</div></div></button>
+      <button class="auto-btn" id="btnAutoSpray" onclick="autoAct('autospray')"> <span class="ico">💧</span> <div><div>AUTO SPRAY</div> <div class="sub">Spray along path</div></div></button>
+      <button class="auto-btn" id="btnHome"      onclick="autoAct('home')">      <span class="ico">⌂</span>  <div><div>RETURN HOME</div><div class="sub">Navigate to start</div></div></button>
+      <button class="auto-btn" id="btnAvoid"     onclick="autoAct('avoid')">     <span class="ico">⚠</span>  <div><div>AVOID</div>      <div class="sub">Obstacle avoidance</div></div></button>
+      <button class="auto-btn" id="btnSoilMap"   onclick="autoAct('soilmap')">   <span class="ico">◉</span>  <div><div>SOIL MAP</div>   <div class="sub">Map field moisture</div></div></button>
+    </div>
+    <button class="auto-stop" onclick="autoAct('stop')">⏹ STOP AUTONOMOUS TASK</button>
+  </div>
+</div>
+
+<div class="panel amber" id="schedCard" style="display:none;">
+  <div class="panel-hdr"><span class="panel-title">// WATER SCHEDULE</span></div>
+  <div class="panel-body">
+    <div class="sched-row"><label>Check every</label><input type="number" id="sDays" min="1" max="30" value="3"><span style="font-size:0.65rem;color:var(--dim);">days</span></div>
+    <div class="sched-row"><label>Water if soil &lt;</label><input type="number" id="sLow" min="0" max="100" value="30"><span style="font-size:0.65rem;color:var(--dim);">%</span></div>
+    <div class="sched-row"><label>Stop if soil &gt;</label><input type="number" id="sHigh" min="0" max="100" value="60"><span style="font-size:0.65rem;color:var(--dim);">%</span></div>
+    <div class="sched-status" id="schedStatus">NO ACTIVE SCHEDULE</div>
+    <div class="sched-btns">
+      <button class="s-start" onclick="startSched()">▶ START</button>
+      <button class="s-stop"  onclick="stopSched()">⏹ STOP</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-hdr"><span class="panel-title">// TELEMETRY</span></div>
+  <div class="panel-body">
+    <div class="sensor-grid">
+      <div class="sen"><div class="sen-val" id="sYaw">---°</div>  <div class="sen-lbl">YAW</div></div>
+      <div class="sen"><div class="sen-val" id="sHdg">---°</div>  <div class="sen-lbl">HEADING</div></div>
+      <div class="sen"><div class="sen-val" id="sSats">--</div>   <div class="sen-lbl">SATS</div></div>
+      <div class="sen"><div class="sen-val" id="sLat">--</div>    <div class="sen-lbl">LAT</div></div>
+      <div class="sen"><div class="sen-val" id="sLng">--</div>    <div class="sen-lbl">LNG</div></div>
+      <div class="sen">
+        <div class="sen-val" id="sFix" style="color:var(--red)">NO FIX</div>
+        <div class="sen-lbl">GPS</div>
+      </div>
+    </div>
+    <div class="batt-bar" style="margin-top:0.5rem;"><div class="batt-fill" id="battFill"></div></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-hdr"><span class="panel-title">// ATTACHMENTS</span></div>
+  <div class="panel-body">
+    <div class="att-grid">
+      <button class="att-btn" id="attSpray"     onclick="toggleAtt('spray')">      <span class="ico">💧</span>PEST SPRAY</button>
+      <button class="att-btn" id="attWater"     onclick="toggleAtt('waterspray')"> <span class="ico">🚿</span>WATER SPRAY</button>
+      <button class="att-btn" id="attCam"       onclick="toggleAtt('camera')">     <span class="ico">📷</span>CAMERA</button>
+      <button class="att-btn" id="attSoilProbe" onclick="toggleAtt('soilprobe')">  <span class="ico">🌱</span>SOIL PROBE</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel blue">
+  <div class="panel-hdr"><span class="panel-title">// GPS + FIELD MAP</span></div>
+  <div class="panel-body">
+    <div class="gps-row">
+      <div class="gps-box"><div class="gps-val" id="gpsLat">---.-----</div><div class="gps-lbl">LATITUDE</div></div>
+      <div class="gps-box"><div class="gps-val" id="gpsLng">---.-----</div><div class="gps-lbl">LONGITUDE</div></div>
+      <div class="gps-box"><div class="gps-val" id="gpsAlt">--- m</div>   <div class="gps-lbl">ALTITUDE</div></div>
+    </div>
+    <div class="coord-hdr"><span>#</span><span>LAT</span><span>LNG</span><span>ALT(m)</span></div>
+    <div class="coord-body" id="coordBody"><div class="coord-empty">PRESS RECORD TO START</div></div>
+    <div class="map-canvas"><canvas id="mapCanvas"></canvas></div>
+    <div class="map-actions">
+      <button class="map-btn" id="btnRec" onclick="toggleRec()">⏺ RECORD</button>
+      <button class="map-btn danger"      onclick="clearMap()">⌦ CLEAR</button>
+      <button class="map-btn"             onclick="runPath()">▶ RUN</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-hdr"><span class="panel-title">// ACTIVITY LOG</span></div>
+  <div class="panel-body" style="padding-bottom:0.5rem;">
+    <div class="log-box" id="logBox"></div>
+  </div>
+</div>
+
+</div>
+
+<footer>
+  <span class="ft">E.V.E</span>
+  EARTH VISION ENGINE &nbsp;·&nbsp; HACKOMATION 2026 &nbsp;·&nbsp; SURINAME
+</footer>
+
+<script>
+/* ===== WEBSOCKET ===== */
+let ws, wsOk = false;
+
+function wsConnect() {
+  // In production on the ESP32 this will be ws://192.168.4.1/ws
+  // When testing from a browser on the same network use the ESP32's IP
+  const host = location.hostname || '192.168.4.1';
+  ws = new WebSocket('ws://' + host + '/ws');
+
+  ws.onopen = () => {
+    wsOk = true;
+    document.getElementById('wsDot').classList.add('on');
+    document.getElementById('wsLabel').textContent = 'ONLINE';
+    log('WebSocket connected', 'log-ok');
+  };
+
+  ws.onclose = () => {
+    wsOk = false;
+    document.getElementById('wsDot').classList.remove('on');
+    document.getElementById('wsLabel').textContent = 'OFFLINE';
+    log('Connection lost — retrying…', 'log-err');
+    setTimeout(wsConnect, 3000);
+  };
+
+  ws.onerror = () => { ws.close(); };
+
+  ws.onmessage = e => {
+    try {
+      const d = JSON.parse(e.data);
+
+      // Nano acknowledgement forwarded by ESP32
+      if (d.log != null) {
+        log('[ROVER] ' + d.log, 'log-info');
+        return;
+      }
+
+      // IMU — ESP32 sends: yaw, heading
+      if (d.yaw     != null) document.getElementById('sYaw').textContent = parseFloat(d.yaw).toFixed(1) + '°';
+      if (d.heading != null) document.getElementById('sHdg').textContent = parseFloat(d.heading).toFixed(1) + '°';
+
+      // GPS — ESP32 sends: lat, lng, sats, gpsOk
+      if (d.sats != null) document.getElementById('sSats').textContent = d.sats;
+
+      if (d.lat != null) {
+        const lv = parseFloat(d.lat);
+        document.getElementById('sLat').textContent   = lv.toFixed(4);
+        document.getElementById('gpsLat').textContent = lv.toFixed(5);
+      }
+      if (d.lng != null) {
+        const lv = parseFloat(d.lng);
+        document.getElementById('sLng').textContent   = lv.toFixed(4);
+        document.getElementById('gpsLng').textContent = lv.toFixed(5);
+      }
+
+      // GPS fix — ESP32 sends gpsOk boolean
+      if (d.gpsOk != null) {
+        const fixEl = document.getElementById('sFix');
+        fixEl.textContent = d.gpsOk ? 'FIX OK' : 'NO FIX';
+        fixEl.style.color = d.gpsOk ? 'var(--green)' : 'var(--red)';
+      }
+
+      // Record GPS waypoints when active
+      if (recording && d.lat != null && d.lng != null && d.gpsOk) {
+        const pt = { lat: parseFloat(d.lat), lng: parseFloat(d.lng), alt: 0 };
+        // Throttle: only record if moved > ~1m from last point
+        const last = mapPts[mapPts.length - 1];
+        if (!last || Math.abs(pt.lat - last.lat) > 0.000009 || Math.abs(pt.lng - last.lng) > 0.000009) {
+          mapPts.push(pt);
+          addCoordRow(pt, mapPts.length);
+          drawMap();
+        }
+      }
+
+    } catch(err) { /* malformed packet, ignore */ }
+  };
+}
+
+// Send to ESP32 — direction commands use {dir} key, CLI commands use {cli} key
+function wsSend(obj) {
+  if (ws && wsOk && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(obj));
+}
+
+/* ===== STATE ===== */
+let speed = 60, mode = 'manual', useJoy = false, joyInitialized = false;
+let recording = false, mapPts = [];
+let atts = { spray: false, waterspray: false, camera: false, soilprobe: false };
+let cmdTmr = null;
+
+/* ===== SPEED ===== */
+let spdTimer = null;
+function setSpd(v) {
+  speed = parseInt(v);
+  document.getElementById('speedVal').textContent   = v + '%';
+  document.getElementById('speedVal2').textContent  = v + '%';
+  document.getElementById('speedSlider').value  = v;
+  document.getElementById('speedSlider2').value = v;
+  // Debounce: send speed to ESP32 → Nano 300ms after slider stops
+  clearTimeout(spdTimer);
+  spdTimer = setTimeout(() => {
+    wsSend({ spd: speed });
+    log('SPD → ' + speed + '%', 'log-info');
+  }, 300);
+}
+
+/* ===== COMMANDS ===== */
+// ESP32 onWS reads {dir} where dir is F/B/L/R/S
+const dirMap = { forward: 'F', reverse: 'B', left: 'L', right: 'R', stop: 'S' };
+
+function sendCmd(dir) {
+  wsSend({ dir: dirMap[dir] || 'S' });
+  ['bFwd','bRev','bLeft','bRight'].forEach(id => document.getElementById(id)?.classList.remove('pressed'));
+  const btnMap = { forward:'bFwd', reverse:'bRev', left:'bLeft', right:'bRight' };
+  if (btnMap[dir]) document.getElementById(btnMap[dir])?.classList.add('pressed');
+  if (dir !== 'stop') log('➤ ' + dir.toUpperCase() + ' @ ' + speed + '%', 'log-ok');
+}
+
+function startCmd(d) {
+  sendCmd(d);
+  cmdTmr = setInterval(() => sendCmd(d), 280);
+}
+
+function stopCmd() {
+  clearInterval(cmdTmr);
+  sendCmd('stop');
+  ['bFwd','bRev','bLeft','bRight'].forEach(id => document.getElementById(id)?.classList.remove('pressed'));
+}
+
+/* ===== CONTROL SWITCH ===== */
+function switchCtrl() {
+  useJoy = document.getElementById('ctrlSwitch').checked;
+  document.getElementById('dpadWrap').style.display = useJoy ? 'none' : '';
+  document.getElementById('joyWrap').style.display  = useJoy ? ''     : 'none';
+  const lbl = document.getElementById('ctrlLbl');
+  lbl.innerHTML = useJoy ? 'D-PAD / <span class="on">JOY</span>' : '<span class="on">D-PAD</span> / JOY';
+  // Defer joystick init until element is visible and has layout dimensions
+  if (useJoy && !joyInitialized) {
+    requestAnimationFrame(() => { requestAnimationFrame(initJoy); });
+  }
+  log('Input: ' + (useJoy ? 'JOYSTICK' : 'D-PAD'), 'log-info');
+}
+
+/* ===== JOYSTICK ===== */
+function initJoy() {
+  joyInitialized = true;
+  const base  = document.getElementById('joyBase');
+  const stick = document.getElementById('joyStick');
+  const dirEl = document.getElementById('joyDir');
+  let active = false, lastCmd = 'stop';
+
+  function getMaxR() { return base.offsetWidth * 0.27; }
+
+  function getPos(e) {
+    const r = base.getBoundingClientRect();
+    const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - cx, y: t.clientY - cy };
+  }
+
+  function apply(x, y) {
+    const maxR = getMaxR();
+    const dist = Math.sqrt(x * x + y * y);
+    const clamped = Math.min(dist, maxR);
+    const angle = Math.atan2(y, x);
+    stick.style.transform = `translate(calc(-50% + ${(Math.cos(angle) * clamped).toFixed(1)}px), calc(-50% + ${(Math.sin(angle) * clamped).toFixed(1)}px))`;
+
+    let cmd = 'stop';
+    if (dist > maxR * 0.2) {
+      const deg = ((angle * 180 / Math.PI) + 360) % 360;
+      if      (deg >= 315 || deg < 45)  cmd = 'right';
+      else if (deg >= 45  && deg < 135) cmd = 'reverse';
+      else if (deg >= 135 && deg < 225) cmd = 'left';
+      else                               cmd = 'forward';
+    }
+
+    const labels = { forward:'↑ FORWARD', reverse:'↓ REVERSE', left:'← LEFT', right:'→ RIGHT', stop:'— IDLE —' };
+    dirEl.textContent = labels[cmd];
+    if (cmd !== lastCmd) { lastCmd = cmd; sendCmd(cmd); }
+  }
+
+  const go  = e => { e.preventDefault(); active = true;  stick.style.boxShadow = '0 4px 20px rgba(0,0,0,0.5), 0 0 24px rgba(61,255,110,0.4)'; const p = getPos(e); apply(p.x, p.y); };
+  const mv  = e => { if (!active) return; e.preventDefault(); const p = getPos(e); apply(p.x, p.y); };
+  const end = () => { active = false; stick.style.transform = 'translate(-50%,-50%)'; stick.style.boxShadow = ''; dirEl.textContent = '— IDLE —'; lastCmd = 'stop'; sendCmd('stop'); };
+
+  base.addEventListener('mousedown',  go,  { passive: false });
+  base.addEventListener('touchstart', go,  { passive: false });
+  window.addEventListener('mousemove', mv);
+  window.addEventListener('touchmove', mv, { passive: false });
+  window.addEventListener('mouseup',  end);
+  window.addEventListener('touchend', end);
+}
+
+/* ===== MODE ===== */
+function setMode(m) {
+  mode = m;
+  document.getElementById('btnManual').classList.toggle('active', m === 'manual');
+  document.getElementById('btnAuto').classList.toggle('active',   m === 'auto');
+  document.getElementById('manualCard').style.display = m === 'manual' ? '' : 'none';
+  document.getElementById('autoCard').style.display   = m === 'auto'   ? '' : 'none';
+  document.getElementById('schedCard').style.display  = m === 'auto'   ? '' : 'none';
+  // Notify ESP32 of mode change via CLI command
+  wsSend({ cli: 'mode ' + m });
+  log('MODE → ' + m.toUpperCase(), 'log-info');
+}
+
+/* ===== AUTONOMOUS ===== */
+function autoAct(t) {
+  if (t === 'stop') {
+    document.querySelectorAll('.auto-btn').forEach(b => b.classList.remove('running'));
+    wsSend({ cli: 'auto stop' });
+    log('TASK STOPPED', 'log-err');
+    return;
+  }
+  document.querySelectorAll('.auto-btn').forEach(b => b.classList.remove('running'));
+  const ids = { runpath:'btnRunPath', scan:'btnScan', autospray:'btnAutoSpray', home:'btnHome', avoid:'btnAvoid', soilmap:'btnSoilMap' };
+  if (ids[t]) document.getElementById(ids[t]).classList.add('running');
+  wsSend({ cli: 'auto ' + t });
+  const labels = { runpath:'▶ RUNNING PATH', scan:'⊕ SCANNING FIELD', autospray:'💧 AUTO SPRAY', home:'⌂ RETURNING HOME', avoid:'⚠ AVOID ACTIVE', soilmap:'◉ SOIL MAPPING' };
+  log(labels[t] || t, 'log-info');
+}
+
+/* ===== ATTACHMENTS ===== */
+function toggleAtt(n) {
+  atts[n] = !atts[n];
+  const on = atts[n];
+  const map = { spray:'attSpray', waterspray:'attWater', camera:'attCam', soilprobe:'attSoilProbe' };
+  document.getElementById(map[n]).classList.toggle('on', on);
+  wsSend({ cli: 'attach ' + n + ' ' + (on ? 'on' : 'off') });
+  log((on ? '● ON: ' : '○ OFF: ') + n.toUpperCase(), on ? 'log-ok' : 'log-err');
+}
+
+/* ===== SCHEDULE ===== */
+function startSched() {
+  const d  = document.getElementById('sDays').value;
+  const lo = document.getElementById('sLow').value;
+  const hi = document.getElementById('sHigh').value;
+  const s  = document.getElementById('schedStatus');
+  s.textContent = '● ACTIVE — every ' + d + 'd · water <' + lo + '% · stop >' + hi + '%';
+  s.style.color = 'var(--green)';
+  wsSend({ cli: 'sched start ' + d + ' ' + lo + ' ' + hi });
+  log('SCHEDULE STARTED (every ' + d + 'd)', 'log-info');
+}
+function stopSched() {
+  const s = document.getElementById('schedStatus');
+  s.textContent = 'NO ACTIVE SCHEDULE';
+  s.style.color = '';
+  wsSend({ cli: 'sched stop' });
+  log('SCHEDULE STOPPED', 'log-warn');
+}
+
+/* ===== KEYBOARD ===== */
+const kmap = {
+  ArrowUp:'forward', w:'forward', W:'forward',
+  ArrowDown:'reverse', s:'reverse', S:'reverse',
+  ArrowLeft:'left', a:'left', A:'left',
+  ArrowRight:'right', d:'right', D:'right',
+  ' ':'stop'
+};
+const keysDown = new Set();
+document.addEventListener('keydown', e => {
+  if (mode !== 'manual' || useJoy || keysDown.has(e.key)) return;
+  const d = kmap[e.key];
+  if (d) { e.preventDefault(); keysDown.add(e.key); sendCmd(d); }
+});
+document.addEventListener('keyup', e => {
+  keysDown.delete(e.key);
+  if (keysDown.size === 0 && kmap[e.key]) sendCmd('stop');
+});
+
+/* ===== MAP ===== */
+function addCoordRow(pt, n) {
+  const b = document.getElementById('coordBody');
+  const empty = b.querySelector('.coord-empty');
+  if (empty) empty.remove();
+  const r = document.createElement('div');
+  r.className = 'coord-row';
+  r.innerHTML = `<span class="n">${n}</span><span>${pt.lat.toFixed(5)}</span><span>${pt.lng.toFixed(5)}</span><span>${pt.alt.toFixed(1)}</span>`;
+  b.appendChild(r);
+  b.scrollTop = b.scrollHeight;
+}
+
+function toggleRec() {
+  recording = !recording;
+  const b = document.getElementById('btnRec');
+  b.classList.toggle('active', recording);
+  b.textContent = recording ? '⏹ STOP REC' : '⏺ RECORD';
+  log(recording ? 'RECORDING STARTED' : 'RECORDING STOPPED — ' + mapPts.length + ' pts', recording ? 'log-ok' : 'log-warn');
+}
+
+function clearMap() {
+  mapPts = [];
+  document.getElementById('coordBody').innerHTML = '<div class="coord-empty">PRESS RECORD TO START</div>';
+  drawMap();
+  log('MAP CLEARED', 'log-warn');
+}
+
+function runPath() {
+  if (mapPts.length < 2) { log('RECORD A PATH FIRST (min 2 points)', 'log-err'); return; }
+  wsSend({ cli: 'runpath', waypoints: mapPts });
+  log('▶ RUNNING PATH — ' + mapPts.length + ' WAYPOINTS', 'log-info');
+}
+
+function drawMap() {
+  const cv = document.getElementById('mapCanvas');
+  const ctx = cv.getContext('2d');
+  // Use actual pixel dimensions, not CSS dimensions
+  const W = cv.offsetWidth, H = cv.offsetHeight;
+  if (!W || !H) return;
+  cv.width = W; cv.height = H;
+
+  ctx.fillStyle = '#0e1215';
+  ctx.fillRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(61,255,110,0.04)'; ctx.lineWidth = 1;
+  for (let x = 0; x < W; x += 20) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+  for (let y = 0; y < H; y += 20) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+
+  if (mapPts.length < 2) {
+    ctx.fillStyle = 'rgba(74,94,74,0.5)';
+    ctx.font = '11px "Share Tech Mono", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('MAP RENDERS DURING RECORDING', W/2, H/2);
+    return;
+  }
+
+  const lats = mapPts.map(p => p.lat);
+  const lngs = mapPts.map(p => p.lng);
+  const mnLat = Math.min(...lats), mxLat = Math.max(...lats);
+  const mnLng = Math.min(...lngs), mxLng = Math.max(...lngs);
+  const pad = 28, dW = W - pad*2, dH = H - pad*2;
+
+  const tx = lng => pad + ((lng - mnLng) / (mxLng - mnLng || 0.0001)) * dW;
+  const ty = lat => pad + (1 - (lat - mnLat) / (mxLat - mnLat || 0.0001)) * dH;
+
+  ctx.beginPath(); ctx.moveTo(tx(mapPts[0].lng), ty(mapPts[0].lat));
+  mapPts.forEach(p => ctx.lineTo(tx(p.lng), ty(p.lat)));
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(61,255,110,0.05)'; ctx.fill();
+
+  ctx.beginPath(); ctx.moveTo(tx(mapPts[0].lng), ty(mapPts[0].lat));
+  mapPts.forEach(p => ctx.lineTo(tx(p.lng), ty(p.lat)));
+  ctx.strokeStyle = 'rgba(61,255,110,0.5)'; ctx.lineWidth = 2; ctx.stroke();
+
+  mapPts.forEach(p => {
+    ctx.beginPath(); ctx.arc(tx(p.lng), ty(p.lat), 2, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(61,255,110,0.3)'; ctx.fill();
+  });
+
+  // Start marker (blue)
+  ctx.beginPath(); ctx.arc(tx(mapPts[0].lng), ty(mapPts[0].lat), 6, 0, Math.PI*2);
+  ctx.fillStyle = '#3bcfff'; ctx.fill();
+  ctx.strokeStyle = '#090b0d'; ctx.lineWidth = 2; ctx.stroke();
+
+  // End marker (green)
+  const lp = mapPts[mapPts.length - 1];
+  ctx.beginPath(); ctx.arc(tx(lp.lng), ty(lp.lat), 6, 0, Math.PI*2);
+  ctx.fillStyle = '#3dff6e'; ctx.fill();
+  ctx.strokeStyle = '#090b0d'; ctx.lineWidth = 2; ctx.stroke();
+}
+
+/* ===== LOG ===== */
+function log(msg, cls = '') {
+  const b = document.getElementById('logBox');
+  const t = new Date().toTimeString().slice(0, 8);
+  const el = document.createElement('div');
+  el.className = cls;
+  el.textContent = '[' + t + '] ' + msg;
+  b.appendChild(el);
+  b.scrollTop = b.scrollHeight;
+  while (b.children.length > 100) b.removeChild(b.firstChild);
+}
+
+/* ===== INIT ===== */
+window.addEventListener('resize', drawMap);
+
+// Use ResizeObserver so canvas draws correctly once the layout has settled
+const ro = new ResizeObserver(() => drawMap());
+ro.observe(document.getElementById('mapCanvas'));
+
+wsConnect();
+log('E.V.E FIELD CONTROL READY', 'log-ok');
+</script>
+</body>
+</html>
