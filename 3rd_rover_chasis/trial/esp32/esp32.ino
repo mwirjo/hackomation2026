@@ -1,10 +1,3 @@
-// ============================================================
-//  E.V.E Robot Controller — INTEGRATED (ROUTED TO /data/)
-//  WiFi AP + Native NVS Storage (Dynamic Home Network Pairing)
-//  IMU (BNO08x) + GPS telemetry
-//  UART bridge → Arduino Nano motor driver
-// ============================================================
-
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <ESPAsyncWebServer.h>
@@ -16,36 +9,35 @@
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
 #include <SPIFFS.h>
-#include <Preferences.h> // Native ESP32 non-volatile storage library
 
 /* =================== PIN CONFIG =================== */
-#define NANO_TX_PIN   33   // ESP32 TX → voltage divider → Nano RX
-#define NANO_RX_PIN   32   // ESP32 RX ← Nano TX
+#define NANO_TX_PIN   33
+#define NANO_RX_PIN   32
 
-// IMU (BNO08x) — I2C
 static const uint8_t SDA_PIN   = 21;
 static const uint8_t SCL_PIN   = 22;
 static const uint8_t BNO_ADDR  = 0x4A;
 
-// GPS — UART2
 static const uint8_t GPS_RX    = 16;
 static const uint8_t GPS_TX    = 17;
 
-/* =================== WiFi AP =================== */
-static const char* AP_SSID    = "EVE_New_Bot";
-static const char* AP_PASS    = "arduino987";
-static const uint8_t WIFI_CH  = 1;
+/* =================== DYNAMIC NETWORK PROFILES =================== */
+String stSsid           = "IoTLabSu";
+String stPass           = "H@ckTe@m)(";
+
+const char* AP_SSID     = "EVE_New_Bot";
+const char* AP_PASS     = "arduino987";
+const uint8_t WIFI_CH   = 1; 
 
 /* =================== OBJECTS =================== */
 AsyncWebServer  server(80);
 AsyncWebSocket  ws("/ws");
 
-HardwareSerial  nanoSerial(2);   
-HardwareSerial  gpsSerial(1);    
+HardwareSerial  nanoSerial(2);
+HardwareSerial  gpsSerial(1);
 
 Adafruit_BNO08x bno;
 TinyGPSPlus     gps;
-Preferences     preferences; // Hardware storage handle
 
 /* =================== STATE =================== */
 bool    imuReady     = false;
@@ -53,42 +45,28 @@ float   yaw          = 0;
 float   heading      = 0;
 float   gpsLat       = 0;
 float   gpsLng       = 0;
-float   currentSpeed = 60.0;    // 0–100 %
+float   currentSpeed = 60.0;
+String  currentMode  = "IDLE"; 
 
-// Stored Runtime Credentials
-String  savedSSID    = "";
-String  savedPass    = "";
-
-// Telemetry timer
 unsigned long lastTelemetry = 0;
-const    unsigned long TELEM_INTERVAL = 100; // ms
+const unsigned long TELEM_INTERVAL = 100;
 
+String hardwareSerialBuffer = "";
+String nanoSerialBuffer     = "";
+
+/* =================== FUNCTION PROTOTYPES =================== */
 void handleCLI(String cmd);
-
-/* =================== NVS FLASH STORAGE MANAGEMENT =================== */
-void loadWiFiCredentials() {
-  preferences.begin("eve_net", true); // Open storage space in Read-Only mode
-  savedSSID = preferences.getString("ssid", "");
-  savedPass = preferences.getString("pass", "");
-  preferences.end();
-
-  if (savedSSID.length() > 0) {
-    Serial.printf("[STORAGE] Found saved home network profile: %s\n", savedSSID.c_str());
-  } else {
-    Serial.println("[STORAGE] No home network profiles saved yet.");
-  }
-}
-
-void saveWiFiCredentials(String ssid, String pass) {
-  preferences.begin("eve_net", false); // Open storage space in Read-Write mode
-  preferences.putString("ssid", ssid);
-  preferences.putString("pass", pass);
-  preferences.end();
-
-  savedSSID = ssid;
-  savedPass = pass;
-  Serial.printf("[STORAGE] Successfully saved network profile: %s to flash memory.\n", savedSSID.c_str());
-}
+void printHelp();
+void startAccessPoint();
+bool startStationMode();
+void loadWiFiCredentials();
+void saveWiFiCredentials(String ssid, String pass);
+void sendToNano(char cmd);
+void readFromNano();
+void readHardwareSerial();
+void runTelemetryScheduler();
+void updateIMU();
+void updateGPS();
 
 /* =================== NANO UART =================== */
 void sendToNano(char cmd) {
@@ -98,17 +76,30 @@ void sendToNano(char cmd) {
 }
 
 void readFromNano() {
-  while (nanoSerial.available()) {
-    String line = nanoSerial.readStringUntil('\n');
-    line.trim();
-    if (line.length() == 0) return;
-    Serial.printf("[NANO RX] %s\n", line.c_str());
-
-    StaticJsonDocument<128> ack;
-    ack["log"] = line;
-    String out;
-    serializeJson(ack, out);
-    ws.textAll(out);
+  while (nanoSerial.available() > 0) {
+    char c = nanoSerial.read();
+    if (c == '\n') {
+      nanoSerialBuffer.trim();
+      if (nanoSerialBuffer.length() > 0) {
+        bool isMotorEcho = false;
+        if (nanoSerialBuffer.length() == 1) {
+          char check = nanoSerialBuffer.charAt(0);
+          if (check == 'F' || check == 'B' || check == 'L' || check == 'R' || check == 'S' || check == 'O') {
+            isMotorEcho = true;
+          }
+        }
+        if (!isMotorEcho) {
+          StaticJsonDocument<128> ack;
+          ack["log"] = nanoSerialBuffer;
+          String out;
+          serializeJson(ack, out);
+          ws.textAll(out);
+        }
+      }
+      nanoSerialBuffer = ""; 
+    } else if (c != '\r') {
+      nanoSerialBuffer += c; 
+    }
   }
 }
 
@@ -117,12 +108,11 @@ void onWS(AsyncWebSocket* srv, AsyncWebSocketClient* client,
           AwsEventType type, void* arg, uint8_t* data, size_t len) {
 
   if (type == WS_EVT_CONNECT) {
-    Serial.printf("[WS] Client #%u connected\n", client->id());
+    Serial.printf("[WS] UI Terminal linked successfully. Mode: %s\n", currentMode.c_str());
     return;
   }
   if (type == WS_EVT_DISCONNECT) {
-    Serial.printf("[WS] Client #%u disconnected\n", client->id());
-    sendToNano('S'); 
+    sendToNano('S');
     return;
   }
   if (type != WS_EVT_DATA) return;
@@ -132,8 +122,6 @@ void onWS(AsyncWebSocket* srv, AsyncWebSocketClient* client,
 
   if (doc.containsKey("dir")) {
     const char* d = doc["dir"];
-    Serial.printf("[WS] dir=%s @ %.0f%%\n", d, currentSpeed);
-
     if      (strcmp(d, "F") == 0) sendToNano('F');
     else if (strcmp(d, "B") == 0) sendToNano('B');
     else if (strcmp(d, "L") == 0) sendToNano('L');
@@ -144,10 +132,8 @@ void onWS(AsyncWebSocket* srv, AsyncWebSocketClient* client,
 
   if (doc.containsKey("spd")) {
     currentSpeed = doc["spd"];
-    Serial.printf("[WS] speed=%.0f%%\n", currentSpeed);
     String spd = "V" + String((int)currentSpeed);
     nanoSerial.println(spd);
-    Serial.printf("[NANO TX] '%s'\n", spd.c_str());
     return;
   }
 
@@ -155,97 +141,255 @@ void onWS(AsyncWebSocket* srv, AsyncWebSocketClient* client,
     handleCLI(String((const char*)doc["cli"]));
     return;
   }
+}
 
-  if (doc.containsKey("waypoints")) {
-    Serial.println("[PATH] Waypoints received — autonomous path queued");
+/* =================== STORAGE DRIVERS =================== */
+void loadWiFiCredentials() {
+  if (!SPIFFS.exists("/wifi.json")) {
+    Serial.println("[STORAGE] No saved Wi-Fi configuration found. Using default fallbacks.");
     return;
+  }
+
+  File file = SPIFFS.open("/wifi.json", "r");
+  if (!file) {
+    Serial.println("[STORAGE] Failed to open Wi-Fi config file.");
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  DeserializationError error = deserializeJson(doc, file);
+  file.close();
+
+  if (!error) {
+    stSsid = doc["ssid"].as<String>();
+    stPass = doc["pass"].as<String>();
+    Serial.println("[STORAGE] Loaded custom Wi-Fi credentials from SPIFFS.");
+  } else {
+    Serial.println("[STORAGE] Failed to parse Wi-Fi config JSON.");
   }
 }
 
-/* =================== CLI HANDLER =================== */
+void saveWiFiCredentials(String ssid, String pass) {
+  File file = SPIFFS.open("/wifi.json", "w");
+  if (!file) {
+    Serial.println("[STORAGE] Critical error: Could not create Wi-Fi config file!");
+    return;
+  }
+
+  StaticJsonDocument<256> doc;
+  doc["ssid"] = ssid;
+  doc["pass"] = pass;
+
+  if (serializeJson(doc, file) == 0) {
+    Serial.println("[STORAGE] Failed to write data to file.");
+  } else {
+    Serial.println("[STORAGE] New Wi-Fi credentials successfully saved to flash memory.");
+  }
+  file.close();
+}
+
+/* =================== EXCLUSIVE RADIO DRIVERS =================== */
+void startAccessPoint() {
+  Serial.println("[WiFi] Turning off Station stack...");
+  WiFi.disconnect(true, true); 
+  
+  Serial.println("[WiFi] Activating Hardcoded Access Point...");
+  WiFi.mode(WIFI_AP);
+  
+  esp_wifi_set_channel(WIFI_CH, WIFI_SECOND_CHAN_NONE);
+  WiFi.softAP(AP_SSID, AP_PASS, WIFI_CH);
+  
+  currentMode = "AP Mode";
+  Serial.printf("[WiFi] Active Broadcast Name: %s\n", AP_SSID);
+  Serial.printf("[WiFi] Direct Connection Portal IP: %s\n", WiFi.softAPIP().toString().c_str());
+}
+
+bool startStationMode() {
+  if (stSsid.length() == 0) {
+    Serial.println("[WiFi] No home network configuration found. Skipping Station step.");
+    return false;
+  }
+
+  Serial.printf("[WiFi] Attempting connection to: %s\n", stSsid.c_str());
+  WiFi.softAPdisconnect(true); 
+  WiFi.mode(WIFI_STA);
+  
+  WiFi.begin(stSsid.c_str(), stPass.c_str());
+
+  unsigned long startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 10000) {
+    delay(500);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("\n[WiFi] Connected to Home Network! Local Station IP: %s\n", WiFi.localIP().toString().c_str());
+    currentMode = "STA Mode";
+    return true;
+  } else {
+    Serial.println("\n[WiFi] Connection timed out. Router not responding.");
+    return false;
+  }
+}
+
+/* =================== CORE CLI PARSER =================== */
+/* =================== CORE CLI PARSER =================== */
 void handleCLI(String cmd) {
   cmd.trim();
-  Serial.printf("[CLI] %s\n", cmd.c_str());
+  if (cmd.length() == 0) return;
 
-  if (cmd.startsWith("mode ")) {
-    String mode = cmd.substring(5);
-    Serial.printf("[CLI] Mode → %s\n", mode.c_str());
-    if (mode == "auto") {
-      sendToNano('S');
+  Serial.printf("[CLI EXEC] %s\n", cmd.c_str());
+
+  if (cmd == "help" || cmd == "?") {
+    printHelp();
+  }
+  else if (cmd == "imu") {
+    Serial.println("\n--- IMU DIAGNOSTIC REPORT ---");
+    if (imuReady) {
+      Serial.printf("Status:  ONLINE\n");
+      Serial.printf("Yaw:     %.2f°\n", yaw);
+      Serial.printf("Heading: %.2f°\n", heading);
+    } else {
+      Serial.println("Status:  OFFLINE (Check BNO08x I2C Wiring at 0x4A)");
     }
+    Serial.println("-----------------------------\n");
+  }
+  else if (cmd == "gps") {
+    Serial.println("\n--- GPS DIAGNOSTIC REPORT ---");
+    Serial.printf("Fix Status: %s\n", gps.location.isValid() ? "3D FIX ACQUIRED" : "NO FIX (Searching...)");
+    Serial.printf("Satellites: %d\n", gps.satellites.value());
+    Serial.printf("Latitude:   %.6f\n", gpsLat);
+    Serial.printf("Longitude:  %.6f\n", gpsLng);
+    Serial.printf("Altitude:   %.2fm\n", gps.altitude.meters());
+    Serial.printf("HDOP:       %.2f\n", gps.hdop.value() / 100.0);
+    Serial.println("-----------------------------\n");
+  }
+  else if (cmd.startsWith("wifi ")) {
+    String args = cmd.substring(5);
+    int commaIdx = args.indexOf(',');
+    
+    if (commaIdx != -1) {
+      String newSsid = args.substring(0, commaIdx);
+      String newPass = args.substring(commaIdx + 1);
+      newSsid.trim();
+      newPass.trim();
+
+      if (newSsid.length() > 0) {
+        stSsid = newSsid;
+        stPass = newPass;
+        saveWiFiCredentials(stSsid, stPass);
+        
+        Serial.println("[WiFi] Re-initializing connection with new credentials...");
+        if (!startStationMode()) {
+          startAccessPoint();
+        }
+      }
+    } else {
+      Serial.println("[CLI ERROR] Invalid format. Use: wifi SSID,PASSWORD");
+    }
+  }
+  else if (cmd.startsWith("mode ")) {
+    String mode = cmd.substring(5);
+    if (mode == "auto") sendToNano('S');
   }
   else if (cmd.startsWith("auto ")) {
     String action = cmd.substring(5);
-    Serial.printf("[CLI] Auto → %s\n", action.c_str());
-
     if      (action == "stop")    { sendToNano('S'); }
-    else if (action == "runpath") { }
-    else if (action == "scan")    { sendToNano('O'); } 
-    else if (action == "home")    { sendToNano('S'); } 
+    else if (action == "scan")    { sendToNano('O'); }
   }
-  else if (cmd.startsWith("attach ")) {
-    String rest   = cmd.substring(7);
-    int    space  = rest.indexOf(' ');
-    String name   = (space > 0) ? rest.substring(0, space) : rest;
-    String state  = (space > 0) ? rest.substring(space + 1) : "off";
-    Serial.printf("[CLI] Attachment %s → %s\n", name.c_str(), state.c_str());
+  else {
+    Serial.println("[CLI ERROR] Unknown command. Type 'help' or '?' for available options.");
   }
-  else if (cmd.startsWith("sched ")) {
-    Serial.printf("[CLI] Scheduler: %s\n", cmd.c_str());
-  }
-  // ─── ROBUST WIFI PROVISIONING COMMAND ───
-  else if (cmd.startsWith("wifi ")) {
-    String args = cmd.substring(5);
-    args.trim();
-    int space = args.indexOf(' ');
+}
+
+void printHelp() {
+  Serial.println("\n==================================================");
+  Serial.println("            E.V.E CONTROLLER SYSTEM CLI            ");
+  Serial.println("==================================================");
+  Serial.println("Wi-Fi Configuration Command:");
+  Serial.println("  wifi SSID,PASS - Set new credentials & reconnect");
+  Serial.println("\nDirect Motor Overrides (Single Characters):");
+  Serial.println("  F            - Move Forward");
+  Serial.println("  B            - Move Backward");
+  Serial.println("  L            - Turn Left");
+  Serial.println("  R            - Turn Right");
+  Serial.println("  S            - Stop All Motors");
+  Serial.println("  O            - Trigger Environment Scan");
+  Serial.println("\nSystem & Navigation Commands:");
+  Serial.println("  mode auto    - Switch controller state to AUTONOMOUS");
+  Serial.println("  auto scan    - Execute autonomous scanner track");
+  Serial.println("  auto stop    - Halt active autonomous sequence");
+  Serial.println("  help / ?     - Display this command manual");
+  Serial.println("  imu          - Show IMU data");
+  Serial.println("  gps          - Show GPS data");
+  Serial.println("==================================================\n");
+}
+
+/* =================== HARDWARE SERIAL PARSER =================== */
+void readHardwareSerial() {
+  while (Serial.available() > 0) {
+    char c = Serial.read();
     
-    String targetSsid = "";
-    String targetPass = "";
-    
-    if (space > 0) {
-      targetSsid = args.substring(0, space);
-      targetPass = args.substring(space + 1);
-    } else if (args.length() > 0) {
-      targetSsid = args; // Handles open networks with zero password strings
-      targetPass = "";
-    }
-    
-    if (targetSsid.length() > 0) {
-      Serial.printf("[CLI] New credentials received. Connecting to: %s\n", targetSsid.c_str());
-      ws.textAll("{\"log\":\"Saving credentials to NVS storage & linking...\"}");
+    if (c == '\n' || c == '\r') {
+      hardwareSerialBuffer.trim();
       
-      // Save credentials straight into NVS flash memory slots
-      saveWiFiCredentials(targetSsid, targetPass);
-      
-      // Trigger background connection attempt
-      if (savedPass.length() > 0) {
-        WiFi.begin(savedSSID.c_str(), savedPass.c_str());
-      } else {
-        WiFi.begin(savedSSID.c_str());
+      if (hardwareSerialBuffer.length() > 0) {
+        if (hardwareSerialBuffer.length() == 1) {
+          char cmd = hardwareSerialBuffer.charAt(0);
+          if (cmd == 'F' || cmd == 'B' || cmd == 'L' || cmd == 'R' || cmd == 'S' || cmd == 'O') {
+            sendToNano(cmd);
+          } else {
+            handleCLI(hardwareSerialBuffer);
+          }
+        } else {
+          handleCLI(hardwareSerialBuffer);
+        }
+        hardwareSerialBuffer = ""; 
       }
     } else {
-      ws.textAll("{\"log\":\"CLI Error: Syntax must be 'wifi <ssid> <password>'\"}");
+      hardwareSerialBuffer += c;
     }
   }
 }
 
-/* =================== IMU =================== */
+/* =================== TELEMETRY SCHEDULER =================== */
+void runTelemetryScheduler() {
+  unsigned long now = millis();
+  if (now - lastTelemetry >= TELEM_INTERVAL) {
+    lastTelemetry = now;
+
+    StaticJsonDocument<384> doc;
+    doc["yaw"]         = yaw;
+    doc["heading"]     = heading;
+    doc["lat"]         = gpsLat;
+    doc["lng"]         = gpsLng;
+    doc["gpsOk"]       = gps.location.isValid();
+    doc["sats"]        = gps.satellites.value();
+    doc["speed"]       = currentSpeed;
+    doc["wifiStatus"]  = currentMode;
+    doc["staIp"]       = (WiFi.getMode() == WIFI_STA) ? WiFi.localIP().toString() : WiFi.softAPIP().toString();
+
+    String out;
+    serializeJson(doc, out);
+    ws.textAll(out);
+  }
+  ws.cleanupClients();
+}
+
+/* =================== IMU & GPS TARGETS =================== */
 void updateIMU() {
   if (!imuReady) return;
   sh2_SensorValue_t sv;
   if (!bno.getSensorEvent(&sv)) return;
   if (sv.sensorId != SH2_ROTATION_VECTOR) return;
-
   float qi = sv.un.rotationVector.i;
   float qj = sv.un.rotationVector.j;
   float qk = sv.un.rotationVector.k;
   float qr = sv.un.rotationVector.real;
-
   yaw     = atan2f(2*(qr*qk + qi*qj), 1 - 2*(qj*qj + qk*qk)) * 180.0f / PI;
   heading = yaw;
 }
 
-/* =================== GPS =================== */
 void updateGPS() {
   while (gpsSerial.available()) {
     gps.encode(gpsSerial.read());
@@ -260,118 +404,46 @@ void updateGPS() {
 void setup() {
   Serial.begin(115200);
   delay(500);
-  Serial.println("\n[SETUP] E.V.E Integrated Controller starting…");
+  Serial.println("\n[SETUP] E.V.E Controller Starting (Fixed Boot Sequence)...");
 
   Wire.begin(SDA_PIN, SCL_PIN);
+  SPIFFS.begin(true);
 
-  // SPIFFS
-  if (!SPIFFS.begin(true)) {
-    Serial.println("[FS] SPIFFS FAILED");
-  } else {
-    Serial.println("[FS] SPIFFS OK");
-    File root = SPIFFS.open("/");
-    File f    = root.openNextFile();
-    while (f) { Serial.printf("  %s\n", f.name()); f = root.openNextFile(); }
-  }
-
-  // Configure Dual Station + Access point settings
-  WiFi.mode(WIFI_AP_STA);
-  esp_wifi_set_channel(WIFI_CH, WIFI_SECOND_CHAN_NONE);
-  
-  // Bring local dashboard AP up instantly
-  WiFi.softAP(AP_SSID, AP_PASS, WIFI_CH);
-  Serial.printf("[WiFi] AP Active: %s | Access IP: %s\n", AP_SSID, WiFi.softAPIP().toString().c_str());
-
-  // Check storage partitions for home pairing definitions
   loadWiFiCredentials();
-  if (savedSSID.length() > 0) {
-    Serial.printf("[WiFi] Background home link network attempting connection to: %s\n", savedSSID.c_str());
-    if (savedPass.length() > 0) {
-      WiFi.begin(savedSSID.c_str(), savedPass.c_str());
-    } else {
-      WiFi.begin(savedSSID.c_str());
-    }
-  }
 
   nanoSerial.begin(9600, SERIAL_8N1, NANO_RX_PIN, NANO_TX_PIN);
   gpsSerial.begin(9600, SERIAL_8N1, GPS_RX, GPS_TX);
 
   imuReady = bno.begin_I2C(BNO_ADDR);
-  if (imuReady) {
-    bno.enableReport(SH2_ROTATION_VECTOR);
-    Serial.println("[IMU] BNO08x OK");
-  } else {
-    Serial.println("[IMU] BNO08x not found");
+  if (imuReady) bno.enableReport(SH2_ROTATION_VECTOR);
+
+  // STEP 1: INITIALIZE WIFI STACK FIRST (This sets up LwIP and allocates mbox memory)
+  if (!startStationMode()) {
+    startAccessPoint();
   }
 
-  server.serveStatic("/", SPIFFS, "/data/").setDefaultFile("index.html");
-  
+  // STEP 2: SETUP SERVER AND WEBSOCKET ROUTING (Safe to bind now)
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* req) {
+    req->send(SPIFFS, "/index.html", "text/html");
+  });
   server.onNotFound([](AsyncWebServerRequest* req) {
     String path = req->url();
-    String dataPath = "/data" + path;
-    if (SPIFFS.exists(dataPath)) {
-      req->send(SPIFFS, dataPath);
-    } else {
-      req->send(404, "text/plain", "Not found: " + path);
-    }
+    if (SPIFFS.exists(path)) req->send(SPIFFS, path);
+    else req->send(404, "text/plain", "Not found");
   });
 
   ws.onEvent(onWS);
   server.addHandler(&ws);
-
-  server.begin();
-  Serial.println("[HTTP] Server running on port 80");
+  server.begin(); 
+  
+  printHelp(); 
 }
 
-/* =================== LOOP =================== */
+/* =================== CLEAN LOOP =================== */
 void loop() {
   updateGPS();
   updateIMU();
   readFromNano();
-
-  if (Serial.available() > 0) {
-    String input = Serial.readStringUntil('\n');
-    input.trim();
-
-    if (input.length() > 0) {
-      char cmd = input.charAt(0);
-      if (cmd == 'F' || cmd == 'B' || cmd == 'L' || cmd == 'R' || cmd == 'S' || cmd == 'O') {
-        sendToNano(cmd); 
-      } else {
-        Serial.printf("[SYSTEM] Unknown Serial command: '%c'\n", cmd);
-      }
-    }
-  }
-
-  unsigned long now = millis();
-  if (now - lastTelemetry >= TELEM_INTERVAL) {
-    lastTelemetry = now;
-
-    StaticJsonDocument<384> doc;
-    doc["yaw"]     = yaw;
-    doc["heading"] = heading;
-    doc["lat"]     = gpsLat;
-    doc["lng"]     = gpsLng;
-    doc["gpsOk"]   = gps.location.isValid();
-    doc["sats"]    = gps.satellites.value();
-    doc["speed"]   = currentSpeed;
-
-    // Telemetry Provisioning Stream Updates
-    if (WiFi.status() == WL_CONNECTED) {
-      doc["wifiStatus"] = "Connected";
-      doc["staIp"]      = WiFi.localIP().toString();
-    } else if (savedSSID.length() > 0) {
-      doc["wifiStatus"] = "Connecting";
-      doc["staIp"]      = "Disconnected";
-    } else {
-      doc["wifiStatus"] = "Not Configured";
-      doc["staIp"]      = "Disconnected";
-    }
-
-    String out;
-    serializeJson(doc, out);
-    ws.textAll(out);
-  }
-
-  ws.cleanupClients();
+  readHardwareSerial();
+  runTelemetryScheduler();
 }
